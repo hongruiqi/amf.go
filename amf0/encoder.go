@@ -8,74 +8,20 @@ import (
 	"math"
 )
 
-type AMF0Encoder struct {
+type Encoder struct {
 	w       io.Writer
 	bw      *bufio.Writer
 	refObjs []interface{}
 }
 
-func NewAMF0Encoder(w io.Writer) *AMF0Encoder {
-	return &AMF0Encoder{w: w, bw: bufio.NewWriter(w)}
+func NewEncoder(w io.Writer) *Encoder {
+	return &Encoder{w: w, bw: bufio.NewWriter(w)}
 }
 
-func (enc *AMF0Encoder) Encode(packet AMF0Packet) error {
-	u16 := make([]byte, 2)
-	u32 := make([]byte, 4)
-	_, err := enc.bw.Write([]byte{0, 0})
+func (enc *Encoder) Encode(v interface{}) error {
+	err := enc.encodeValue(v)
 	if err != nil {
 		return err
-	}
-	headerCount := len(packet.Headers)
-	if headerCount > 0xFFFF {
-		return errors.New("too many headers")
-	}
-	binary.BigEndian.PutUint16(u16, uint16(headerCount))
-	_, err = enc.bw.Write(u16)
-	if err != nil {
-		return err
-	}
-	for i := 0; i < headerCount; i++ {
-		err := writeUTF8(enc.bw, packet.Headers[i].Name)
-		if packet.Headers[i].MustUnderstand {
-			err = enc.bw.WriteByte(1)
-		} else {
-			err = enc.bw.WriteByte(1)
-		}
-		if err != nil {
-			return err
-		}
-		err = enc.encodeValue(packet.Headers[i].Value)
-		if err != nil {
-			return err
-		}
-	}
-	messageCount := len(packet.Messages)
-	if messageCount > 0xFFFF {
-		return errors.New("too many messages")
-	}
-	binary.BigEndian.PutUint16(u16, uint16(messageCount))
-	_, err = enc.bw.Write(u16)
-	if err != nil {
-		return err
-	}
-	for i := 0; i < messageCount; i++ {
-		err := writeUTF8(enc.bw, packet.Messages[i].TargetUri)
-		if err != nil {
-			return err
-		}
-		err = writeUTF8(enc.bw, packet.Messages[i].ResponseUri)
-		if err != nil {
-			return err
-		}
-		binary.BigEndian.PutUint32(u32, 0xFFFFFFFE)
-		_, err = enc.bw.Write(u32)
-		if err != nil {
-			return err
-		}
-		err = enc.encodeValue(packet.Messages[i].Value)
-		if err != nil {
-			return err
-		}
 	}
 	err = enc.bw.Flush()
 	if err != nil {
@@ -84,26 +30,7 @@ func (enc *AMF0Encoder) Encode(packet AMF0Packet) error {
 	return nil
 }
 
-func (enc *AMF0Encoder) writeRef(v interface{}) (bool, error) {
-	u16 := make([]byte, 2)
-	for i, obj := range enc.refObjs {
-		if v == obj {
-			err := enc.bw.WriteByte(ReferenceMarker)
-			if err != nil {
-				return true, err
-			}
-			binary.BigEndian.PutUint16(u16, uint16(i))
-			_, err = enc.bw.Write(u16)
-			if err != nil {
-				return true, err
-			}
-			break
-		}
-	}
-	return false, nil
-}
-
-func (enc *AMF0Encoder) encodeValue(v interface{}) error {
+func (enc *Encoder) encodeValue(v interface{}) error {
 	u32 := make([]byte, 4)
 	u64 := make([]byte, 8)
 	switch v.(type) {
@@ -266,7 +193,26 @@ func (enc *AMF0Encoder) encodeValue(v interface{}) error {
 	return nil
 }
 
-func (enc *AMF0Encoder) writeObject(obj map[string]interface{}) error {
+func (enc *Encoder) writeRef(v interface{}) (bool, error) {
+	u16 := make([]byte, 2)
+	for i, obj := range enc.refObjs {
+		if v == obj {
+			err := enc.bw.WriteByte(ReferenceMarker)
+			if err != nil {
+				return true, err
+			}
+			binary.BigEndian.PutUint16(u16, uint16(i))
+			_, err = enc.bw.Write(u16)
+			if err != nil {
+				return true, err
+			}
+			break
+		}
+	}
+	return false, nil
+}
+
+func (enc *Encoder) writeObject(obj map[string]interface{}) error {
 	for k, v := range obj {
 		err := writeUTF8(enc.bw, k)
 		if err != nil {

@@ -8,90 +8,28 @@ import (
 	"strconv"
 )
 
-type AMF0Decoder struct {
+type Decoder struct {
 	r       io.Reader
 	refObjs []interface{}
 }
 
 // should use io.LimitedReader
-func NewAMF0Decoder(r io.Reader) *AMF0Decoder {
+func NewDecoder(r io.Reader) *Decoder {
 	if _, ok := r.(*bufio.Reader); ok {
-		return &AMF0Decoder{r: r}
+		return &Decoder{r: r}
 	}
-	return &AMF0Decoder{r: bufio.NewReader(r)}
+	return &Decoder{r: bufio.NewReader(r)}
 }
 
-func (dec *AMF0Decoder) Decode() (*AMF0Packet, error) {
-	packet := new(AMF0Packet)
-	// Headers
-	u8 := make([]byte, 1)
-	u16 := make([]byte, 2)
-	u32 := make([]byte, 4)
-	_, err := dec.r.Read(u16)
+func (dec *Decoder) Decode() (interface{}, error) {
+	v, err := dec.decodeValue(dec.r)
 	if err != nil {
 		return nil, err
 	}
-	headerCount := binary.BigEndian.Uint16(u16)
-	packet.Headers = make([]AMF0Header, headerCount)
-	for i := 0; i < int(headerCount); i++ {
-		headerNameBytes, err := readUTF8(dec.r)
-		if err != nil {
-			return nil, err
-		}
-		packet.Headers[i].Name = string(headerNameBytes)
-		_, err = dec.r.Read(u8)
-		if err != nil {
-			return nil, err
-		}
-		packet.Headers[i].MustUnderstand = u8[0] != 0
-		_, err = dec.r.Read(u32)
-		if err != nil {
-			return nil, err
-		}
-		headerLength := binary.BigEndian.Uint32(u32)
-		if headerLength == 0xFFFFFFFE {
-			packet.Headers[i].Value, err = dec.decodeValue(dec.r)
-		} else {
-			packet.Headers[i].Value, err = dec.decodeValue(&io.LimitedReader{R: dec.r, N: int64(headerLength)})
-		}
-		if err != nil {
-			return nil, err
-		}
-	}
-	// Messages
-	_, err = dec.r.Read(u16)
-	if err != nil {
-		return nil, err
-	}
-	messageCount := binary.BigEndian.Uint16(u16)
-	packet.Messages = make([]AMF0Message, messageCount)
-	var i uint16
-	for i = 0; i < messageCount; i++ {
-		targetUriBytes, err := readUTF8(dec.r)
-		if err != nil {
-			return nil, err
-		}
-		responseUriBytes, err := readUTF8(dec.r)
-		if err != nil {
-			return nil, err
-		}
-		_, err = dec.r.Read(u32)
-		if err != nil {
-			return nil, err
-		}
-		messageLength := binary.BigEndian.Uint32(u32)
-		value, err := dec.decodeValue(&io.LimitedReader{R: dec.r, N: int64(messageLength)})
-		if err != nil {
-			return nil, err
-		}
-		packet.Messages[i].TargetUri = string(targetUriBytes)
-		packet.Messages[i].ResponseUri = string(responseUriBytes)
-		packet.Messages[i].Value = value
-	}
-	return packet, nil
+	return v, nil
 }
 
-func (dec *AMF0Decoder) decodeValue(r io.Reader) (interface{}, error) {
+func (dec *Decoder) decodeValue(r io.Reader) (interface{}, error) {
 	u8 := make([]byte, 1)
 	u16 := make([]byte, 2)
 	u32 := make([]byte, 4)
@@ -223,7 +161,7 @@ func (dec *AMF0Decoder) decodeValue(r io.Reader) (interface{}, error) {
 	return nil, nil
 }
 
-func (dec *AMF0Decoder) readObject(r io.Reader) (map[string]interface{}, error) {
+func (dec *Decoder) readObject(r io.Reader) (map[string]interface{}, error) {
 	u8 := make([]byte, 1)
 	v := make(map[string]interface{})
 	for {
