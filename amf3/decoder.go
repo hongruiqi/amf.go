@@ -1,7 +1,5 @@
 package amf3
 
-// +build ignore
-
 import (
 	"bufio"
 	"encoding/binary"
