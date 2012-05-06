@@ -24,10 +24,7 @@ func (enc *Encoder) Encode(v interface{}) error {
 		return err
 	}
 	err = enc.bw.Flush()
-	if err != nil {
-		return err
-	}
-	return nil
+	return err
 }
 
 func (enc *Encoder) encodeValue(v interface{}) error {
