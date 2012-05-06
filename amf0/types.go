@@ -1,5 +1,7 @@
 package amf0
 
+import ()
+
 type NullType struct {
 }
 
@@ -13,9 +15,10 @@ type NumberType float64
 type BooleanType bool
 type StringType string
 type LongStringType string
-type XmlDocumentType string
-type ObjectType map[string]interface{}
-type EcmaArrayType map[string]interface{}
+type XmlDocumentType LongStringType
+type _Object map[StringType]interface{}
+type ObjectType _Object
+type EcmaArrayType _Object
 type StrictArrayType []interface{}
 
 type DateType struct {
@@ -24,6 +27,6 @@ type DateType struct {
 }
 
 type TypedObjectType struct {
-	ClassName string
-	Object    ObjectType
+	ClassName StringType
+	Object    _Object
 }

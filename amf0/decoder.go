@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
-	"strconv"
+	"math"
 )
 
 type Decoder struct {
@@ -22,53 +22,52 @@ func NewDecoder(r io.Reader) *Decoder {
 }
 
 func (dec *Decoder) Decode() (interface{}, error) {
-	v, err := dec.decodeValue(dec.r)
+	v, err := dec.decodeValue()
 	if err != nil {
 		return nil, err
 	}
 	return v, nil
 }
 
-func (dec *Decoder) decodeValue(r io.Reader) (interface{}, error) {
+func (dec *Decoder) decodeValue() (interface{}, error) {
 	u8 := make([]byte, 1)
 	u16 := make([]byte, 2)
 	u32 := make([]byte, 4)
 	u64 := make([]byte, 8)
-	_, err := r.Read(u8)
+	_, err := dec.r.Read(u8)
 	if err != nil {
 		return nil, err
 	}
 	marker := u8[0]
 	switch marker {
 	case NumberMarker:
-		_, err := r.Read(u64)
+		_, err := dec.r.Read(u64)
 		if err != nil {
 			return nil, err
 		}
-		number, err := strconv.ParseFloat(string(u64), 64)
-		if err != nil {
-			return nil, err
-		}
+		u64n := binary.BigEndian.Uint64(u64)
+		number := math.Float64frombits(u64n)
 		return NumberType(number), nil
 	case BooleanMarker:
-		_, err := r.Read(u8)
+		_, err := dec.r.Read(u8)
 		if err != nil {
 			return nil, err
 		}
 		return BooleanType(u8[0] != 0), nil
 	case StringMarker:
-		stringBytes, err := readUTF8(r)
+		stringBytes, err := readUTF8(dec.r)
 		if err != nil {
 			return nil, err
 		}
 		return StringType(stringBytes), nil
 	case ObjectMarker:
-		obj, err := dec.readObject(r)
+		object := new(ObjectType)
+		dec.refObjs = append(dec.refObjs, object)
+		obj, err := dec.readObject()
 		if err != nil {
 			return nil, err
 		}
-		object := ObjectType(obj)
-		dec.refObjs = append(dec.refObjs, object)
+		*object = ObjectType(obj)
 		return object, nil
 	case MovieclipMarker:
 		return nil, errors.New("Movieclip Type not supported")
@@ -77,61 +76,63 @@ func (dec *Decoder) decodeValue(r io.Reader) (interface{}, error) {
 	case UndefinedMarker:
 		return UndefinedType{}, nil
 	case ReferenceMarker:
-		_, err = r.Read(u16)
+		_, err = dec.r.Read(u16)
 		if err != nil {
-			refid := binary.BigEndian.Uint16(u16)
-			if int(refid) >= len(dec.refObjs) {
-				return nil, errors.New("reference error")
-			}
-			return dec.refObjs[refid], nil
+			return nil, err
 		}
+		refid := binary.BigEndian.Uint16(u16)
+		if int(refid) >= len(dec.refObjs) {
+			return nil, errors.New("reference error")
+		}
+		return dec.refObjs[refid], nil
 	case EcmaArrayMarker:
-		_, err := r.Read(u32)
+		_, err := dec.r.Read(u32)
 		if err != nil {
 			return nil, err
 		}
+		object := new(EcmaArrayType)
+		dec.refObjs = append(dec.refObjs, object)
 		associativeCount := binary.BigEndian.Uint32(u32)
-		obj, err := dec.readObject(r)
+		obj, err := dec.readObject()
 		if err != nil {
 			return nil, err
 		}
-		object := EcmaArrayType(obj)
-		if uint32(len(object)) != associativeCount {
+		*object = EcmaArrayType(obj)
+		if uint32(len(*object)) != associativeCount {
 			return nil, errors.New("EcmaArray count error")
 		}
-		dec.refObjs = append(dec.refObjs, object)
 		return object, nil
 	case StrictArrayMarker:
-		_, err := r.Read(u32)
+		_, err := dec.r.Read(u32)
 		if err != nil {
 			return nil, err
 		}
+		object := new(StrictArrayType)
+		dec.refObjs = append(dec.refObjs, object)
 		arrayCount := binary.BigEndian.Uint32(u32)
 		array := make(StrictArrayType, arrayCount)
-		var i uint32
-		for i = 0; i < arrayCount; i++ {
-			array[i], err = dec.decodeValue(r)
+		for i := 0; i < int(arrayCount); i++ {
+			array[i], err = dec.decodeValue()
 			if err != nil {
 				return nil, err
 			}
 		}
-		dec.refObjs = append(dec.refObjs, array)
+		*object = array
+		return object, nil
 	case DateMarker:
-		_, err := r.Read(u64)
+		_, err := dec.r.Read(u64)
 		if err != nil {
 			return nil, err
 		}
-		date, err := strconv.ParseFloat(string(u64), 64)
-		if err != nil {
-			return nil, err
-		}
-		_, err = r.Read(u16)
+		u64n := binary.BigEndian.Uint64(u64)
+		date := math.Float64frombits(u64n)
+		_, err = dec.r.Read(u16)
 		if err != nil {
 			return nil, err
 		}
 		return DateType{Date: date}, nil
 	case LongStringMarker:
-		stringBytes, err := readUTF8Long(r)
+		stringBytes, err := readUTF8Long(dec.r)
 		if err != nil {
 			return nil, err
 		}
@@ -141,87 +142,92 @@ func (dec *Decoder) decodeValue(r io.Reader) (interface{}, error) {
 	case RecordsetMarker:
 		return nil, errors.New("RecordSet Type not supported")
 	case XmlDocumentMarker:
-		stringBytes, err := readUTF8Long(r)
+		stringBytes, err := readUTF8Long(dec.r)
 		if err != nil {
 			return nil, err
 		}
 		return XmlDocumentType(stringBytes), nil
 	case TypedObjectMarker:
-		classNameBytes, err := readUTF8(r)
+		object := new(TypedObjectType)
+		dec.refObjs = append(dec.refObjs, object)
+		classNameBytes, err := readUTF8(dec.r)
 		if err != nil {
 			return nil, err
 		}
-		obj, err := dec.readObject(r)
+		obj, err := dec.readObject()
 		if err != nil {
 			return nil, err
 		}
-		return TypedObjectType{ClassName: string(classNameBytes), Object: ObjectType(obj)}, nil
+		*object = TypedObjectType{ClassName: StringType(classNameBytes), Object: _Object(obj)}
+		return object, nil
 	}
-	panic("should not reach here")
+	panic("not reach")
 	return nil, nil
 }
 
-func (dec *Decoder) readObject(r io.Reader) (map[string]interface{}, error) {
+func (dec *Decoder) readObject() (_Object, error) {
 	u8 := make([]byte, 1)
-	v := make(map[string]interface{})
+	v := make(map[StringType]interface{})
 	for {
-		nameBytes, err := readUTF8(r)
+		name, err := readUTF8(dec.r)
 		if err != nil {
 			return nil, err
 		}
-		if nameBytes == nil {
-			_, err := r.Read(u8)
+		if name == "" {
+			_, err := dec.r.Read(u8)
 			if err != nil {
 				return nil, err
 			}
 			if u8[0] == ObjectEndMarker {
 				break
+			} else {
+				return nil, errors.New("expect ObjectEndMarker here")
 			}
 		}
-		value, err := dec.decodeValue(r)
+		value, err := dec.decodeValue()
 		if err != nil {
 			return nil, err
 		}
-		if _, ok := v[string(nameBytes)]; ok {
+		if _, ok := v[name]; ok {
 			return nil, errors.New("object-property exists")
 		}
-		v[string(nameBytes)] = value
+		v[name] = value
 	}
 	return v, nil
 }
 
-func readUTF8(r io.Reader) ([]byte, error) {
+func readUTF8(r io.Reader) (StringType, error) {
 	u16 := make([]byte, 2)
 	_, err := r.Read(u16)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	stringLength := binary.BigEndian.Uint16(u16)
 	if stringLength == 0 {
-		return nil, nil
+		return "", nil
 	}
 	stringBytes := make([]byte, stringLength)
 	_, err = r.Read(stringBytes)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	return stringBytes, nil
+	return StringType(stringBytes), nil
 }
 
-func readUTF8Long(r io.Reader) ([]byte, error) {
+func readUTF8Long(r io.Reader) (LongStringType, error) {
 	u32 := make([]byte, 4)
 	_, err := r.Read(u32)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	stringLength := binary.BigEndian.Uint32(u32)
 	if stringLength == 0 {
-		return nil, nil
+		return "", nil
 	}
 	stringBytes := make([]byte, stringLength)
 	_, err = r.Read(stringBytes)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	return stringBytes, nil
+	return LongStringType(stringBytes), nil
 }

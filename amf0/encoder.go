@@ -33,24 +33,23 @@ func (enc *Encoder) Encode(v interface{}) error {
 func (enc *Encoder) encodeValue(v interface{}) error {
 	u32 := make([]byte, 4)
 	u64 := make([]byte, 8)
-	switch v.(type) {
-	case NumberType:
+	if value, ok := v.(NumberType); ok {
 		err := enc.bw.WriteByte(NumberMarker)
 		if err != nil {
 			return err
 		}
-		number := math.Float64bits(v.(float64))
+		number := math.Float64bits(float64(value))
 		binary.BigEndian.PutUint64(u64, number)
 		_, err = enc.bw.Write(u64)
 		if err != nil {
 			return err
 		}
-	case BooleanType:
+	} else if value, ok := v.(BooleanType); ok {
 		err := enc.bw.WriteByte(BooleanMarker)
 		if err != nil {
 			return err
 		}
-		if v.(bool) {
+		if value {
 			err = enc.bw.WriteByte(1)
 		} else {
 			err = enc.bw.WriteByte(0)
@@ -58,87 +57,99 @@ func (enc *Encoder) encodeValue(v interface{}) error {
 		if err != nil {
 			return err
 		}
-	case StringType:
+	} else if value, ok := v.(StringType); ok {
 		err := enc.bw.WriteByte(StringMarker)
 		if err != nil {
 			return err
 		}
-		err = writeUTF8(enc.bw, v.(string))
+		err = writeUTF8(enc.bw, value)
 		if err != nil {
 			return err
 		}
-	case ObjectType:
-		ok, err := enc.writeRef(v)
+	} else if value, ok := v.(*ObjectType); ok {
+		ok, err := enc.writeRef(value)
 		if err != nil {
 			return err
 		}
-		if !ok {
-			enc.refObjs = append(enc.refObjs, v)
+		if ok {
+			return nil
+		} else {
+			enc.refObjs = append(enc.refObjs, value)
 			err := enc.bw.WriteByte(ObjectMarker)
 			if err != nil {
 				return err
 			}
-			err = enc.writeObject(v.(map[string]interface{}))
+			err = enc.writeObject(_Object(*value))
 			if err != nil {
 				return err
 			}
 		}
-	case NullType:
+	} else if _, ok := v.(NullType); ok {
 		err := enc.bw.WriteByte(NullMarker)
 		if err != nil {
 			return err
 		}
-	case UndefinedType:
+	} else if _, ok := v.(UndefinedType); ok {
 		err := enc.bw.WriteByte(UndefinedMarker)
 		if err != nil {
 			return err
 		}
-	case EcmaArrayType:
-		ok, err := enc.writeRef(v)
+	} else if value, ok := v.(*EcmaArrayType); ok {
+		ok, err := enc.writeRef(value)
 		if err != nil {
 			return err
 		}
-		if !ok {
-			enc.refObjs = append(enc.refObjs, v)
+		if ok {
+			return nil
+		} else {
+			enc.refObjs = append(enc.refObjs, value)
 			err := enc.bw.WriteByte(EcmaArrayMarker)
 			if err != nil {
 				return err
 			}
-			err = enc.writeObject(v.(map[string]interface{}))
+			associativeCount := len(*value)
+			binary.BigEndian.PutUint32(u32, uint32(associativeCount))
+			_, err = enc.bw.Write(u32)
+			if err != nil {
+				return err
+			}
+			err = enc.writeObject(_Object(*value))
 			if err != nil {
 				return err
 			}
 		}
-	case StrictArrayType:
-		ok, err := enc.writeRef(v)
+	} else if value, ok := v.(*StrictArrayType); ok {
+		ok, err := enc.writeRef(value)
 		if err != nil {
 			return err
 		}
-		if !ok {
-			enc.refObjs = append(enc.refObjs, v)
+		if ok {
+			return nil
+		} else {
+			enc.refObjs = append(enc.refObjs, value)
 			err := enc.bw.WriteByte(StrictArrayMarker)
 			if err != nil {
 				return err
 			}
-			arrayCount := len(v.(StrictArrayType))
+			arrayCount := len(*value)
 			binary.BigEndian.PutUint32(u32, uint32(arrayCount))
 			_, err = enc.bw.Write(u32)
 			if err != nil {
 				return err
 			}
 			for i := 0; i < arrayCount; i++ {
-				err := enc.encodeValue(v.(StrictArrayType)[i])
+				err := enc.encodeValue((*value)[i])
 				if err != nil {
 					return err
 				}
 			}
 		}
-	case DateType:
+	} else if value, ok := v.(DateType); ok {
 		err := enc.bw.WriteByte(DateMarker)
 		if err != nil {
 			return err
 		}
-		date := math.Float64bits(v.(DateType).Date)
+		date := math.Float64bits(value.Date)
 		binary.BigEndian.PutUint64(u64, date)
 		_, err = enc.bw.Write(u64)
 		if err != nil {
@@ -148,46 +159,50 @@ func (enc *Encoder) encodeValue(v interface{}) error {
 		if err != nil {
 			return err
 		}
-	case LongStringType:
-		err := writeUTF8Long(enc.bw, v.(string))
+	} else if _, ok := v.(LongStringType); ok {
+		err := enc.bw.WriteByte(LongStringMarker)
 		if err != nil {
 			return err
 		}
-	case UnsupportedType:
+		err = writeUTF8Long(enc.bw, v.(LongStringType))
+		if err != nil {
+			return err
+		}
+	} else if _, ok := v.(UnsupportedType); ok {
 		err := enc.bw.WriteByte(UnsupportedMarker)
 		if err != nil {
 			return err
 		}
-	case XmlDocumentType:
+	} else if value, ok := v.(XmlDocumentType); ok {
 		err := enc.bw.WriteByte(XmlDocumentMarker)
 		if err != nil {
 			return err
 		}
-		err = writeUTF8Long(enc.bw, v.(string))
+		err = writeUTF8Long(enc.bw, LongStringType(value))
 		if err != nil {
 			return err
 		}
-	case TypedObjectType:
-		ok, err := enc.writeRef(v)
+	} else if value, ok := v.(*TypedObjectType); ok {
+		ok, err := enc.writeRef(value)
 		if err != nil {
 			return err
 		}
 		if !ok {
-			enc.refObjs = append(enc.refObjs, v)
+			enc.refObjs = append(enc.refObjs, value)
 			err := enc.bw.WriteByte(TypedObjectMarker)
 			if err != nil {
 				return err
 			}
-			err = writeUTF8Long(enc.bw, v.(TypedObjectType).ClassName)
+			err = writeUTF8(enc.bw, value.ClassName)
 			if err != nil {
 				return err
 			}
-			err = enc.writeObject(v.(TypedObjectType).Object)
+			err = enc.writeObject(value.Object)
 			if err != nil {
 				return err
 			}
 		}
-	default:
+	} else {
 		return errors.New("unsupported type")
 	}
 	return nil
@@ -199,20 +214,20 @@ func (enc *Encoder) writeRef(v interface{}) (bool, error) {
 		if v == obj {
 			err := enc.bw.WriteByte(ReferenceMarker)
 			if err != nil {
-				return true, err
+				return false, err
 			}
 			binary.BigEndian.PutUint16(u16, uint16(i))
 			_, err = enc.bw.Write(u16)
 			if err != nil {
-				return true, err
+				return false, err
 			}
-			break
+			return true, nil
 		}
 	}
 	return false, nil
 }
 
-func (enc *Encoder) writeObject(obj map[string]interface{}) error {
+func (enc *Encoder) writeObject(obj _Object) error {
 	for k, v := range obj {
 		err := writeUTF8(enc.bw, k)
 		if err != nil {
@@ -230,9 +245,12 @@ func (enc *Encoder) writeObject(obj map[string]interface{}) error {
 	return nil
 }
 
-func writeUTF8(w io.Writer, s string) error {
+func writeUTF8(w io.Writer, s StringType) error {
 	u16 := make([]byte, 2)
 	length := len(s)
+	if length > 0xFFFF {
+		return errors.New("string too long")
+	}
 	binary.BigEndian.PutUint16(u16, uint16(length))
 	_, err := w.Write(u16)
 	if err != nil {
@@ -245,7 +263,7 @@ func writeUTF8(w io.Writer, s string) error {
 	return nil
 }
 
-func writeUTF8Long(w io.Writer, s string) error {
+func writeUTF8Long(w io.Writer, s LongStringType) error {
 	u32 := make([]byte, 4)
 	length := len(s)
 	binary.BigEndian.PutUint32(u32, uint32(length))
