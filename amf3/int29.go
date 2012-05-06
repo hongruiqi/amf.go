@@ -19,7 +19,7 @@ func encodeUInt29(n uint32) ([]byte, error) {
 		b[0] = byte(n>>14 | 0x80)
 		b[1] = byte(n>>7&0x7F | 0x80)
 		b[2] = byte(n & 0x7F)
-	} else if n <= 0x3FFFFFFF {
+	} else if n <= 0x1FFFFFFF {
 		b = make([]byte, 4)
 		b[0] = byte(n>>22 | 0x80)
 		b[1] = byte(n>>15&0x7F | 0x80)
@@ -41,10 +41,10 @@ func EncodeUInt29(w io.Writer, n uint32) error {
 }
 
 func EncodeInt29(w io.Writer, n int32) error {
-	if n > 0xFFFFFFF || n < 0x10000000 {
-		return errors.New("out of range")
+	un, err := S2UInt29(n)
+	if err != nil {
+		return err
 	}
-	un := uint32(n)
 	un = un&0xFFFFFFF | (un & 0x80000000 >> 3)
 	return EncodeUInt29(w, un)
 }
@@ -61,7 +61,7 @@ func DecodeUInt29(r io.Reader) (uint32, error) {
 		if i != 3 {
 			n |= uint32(b[0] & 0x7F)
 			if b[0]&0x80 != 0 {
-				if i < 2 {
+				if i != 2 {
 					n <<= 7
 				} else {
 					n <<= 8
@@ -83,11 +83,30 @@ func DecodeInt29(r io.Reader) (int32, error) {
 	if err != nil {
 		return 0, err
 	}
-	if un&0x10000000 != 0 {
-		return int32(un | 0xFF000000), nil
-	} else {
-		return int32(un), nil
+	sn, err := U2SInt29(un)
+	if err != nil {
+		return 0, err
 	}
-	panic("not reach")
-	return 0, nil
+	return sn, nil
+}
+
+// signed int -> uint29
+func S2UInt29(i int32) (uint32, error) {
+	if i > 0xFFFFFFF || i < -0x10000000 {
+		return 0, errors.New("out of range")
+	}
+	ui := uint32(i)
+	ui = ui&0xFFFFFFF | (ui & 0x80000000 >> 3)
+	return ui, nil
+}
+
+// uint29 -> signed int
+func U2SInt29(i uint32) (int32, error) {
+	if i > 0x1FFFFFFF {
+		return 0, errors.New("out of range")
+	}
+	if i&0x10000000 != 0 {
+		return int32(i | 0xFF000000), nil
+	}
+	return int32(i), nil
 }
