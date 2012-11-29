@@ -5,7 +5,9 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"reflect"
 	"math"
+	"fmt"
 )
 
 type Encoder struct {
@@ -200,7 +202,7 @@ func (enc *Encoder) encodeValue(v interface{}) error {
 			}
 		}
 	} else {
-		return errors.New("unsupported type")
+		return fmt.Errorf("amf0 encoder unsupported type: %v", reflect.TypeOf(v))
 	}
 	return nil
 }
