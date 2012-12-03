@@ -4,10 +4,10 @@ import (
 	"bufio"
 	"encoding/binary"
 	"errors"
-	"io"
-	"reflect"
-	"math"
 	"fmt"
+	"io"
+	"math"
+	"reflect"
 )
 
 type Encoder struct {

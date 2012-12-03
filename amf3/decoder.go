@@ -9,10 +9,10 @@ import (
 )
 
 type ConsistReader struct {
-	rd       io.Reader
+	rd io.Reader
 }
 
-func (cr ConsistReader) Read (p []byte) (n int, err error) {
+func (cr ConsistReader) Read(p []byte) (n int, err error) {
 	pos := 0
 	for {
 		n, err := cr.rd.Read(p[pos:])
