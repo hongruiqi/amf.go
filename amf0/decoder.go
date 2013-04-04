@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 )
@@ -40,8 +41,14 @@ func NewDecoder(r io.Reader) *Decoder {
 	return &Decoder{r: ConsistReader{rd: bufio.NewReader(r)}}
 }
 
-func (dec *Decoder) Decode() (interface{}, error) {
-	v, err := dec.decodeValue()
+func (dec *Decoder) Decode() (v interface{}, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			v = nil
+			err = errors.New(r.(string))
+		}
+	}()
+	v, err = dec.decodeValue()
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +187,7 @@ func (dec *Decoder) decodeValue() (interface{}, error) {
 		*object = TypedObjectType{ClassName: StringType(classNameBytes), Object: _Object(obj)}
 		return object, nil
 	}
-	panic("not reach")
+	panic(fmt.Sprintf("not reach: %#v", marker))
 	return nil, nil
 }
 
