@@ -4,25 +4,51 @@ import (
 	"bufio"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 )
 
+type ConsistReader struct {
+	rd io.Reader
+}
+
+func (cr ConsistReader) Read(p []byte) (n int, err error) {
+	pos := 0
+	for {
+		n, err := cr.rd.Read(p[pos:])
+		if err != nil {
+			return n, err
+		}
+		pos += n
+		if pos == len(p) {
+			break
+		}
+	}
+	return pos, nil
+}
+
 type Decoder struct {
-	r       io.Reader
+	r       ConsistReader
 	refObjs []interface{}
 }
 
 // should use io.LimitedReader
 func NewDecoder(r io.Reader) *Decoder {
 	if _, ok := r.(*bufio.Reader); ok {
-		return &Decoder{r: r}
+		return &Decoder{r: ConsistReader{rd: r}}
 	}
-	return &Decoder{r: bufio.NewReader(r)}
+	return &Decoder{r: ConsistReader{rd: bufio.NewReader(r)}}
 }
 
-func (dec *Decoder) Decode() (interface{}, error) {
-	v, err := dec.decodeValue()
+func (dec *Decoder) Decode() (v interface{}, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			v = nil
+			err = errors.New(r.(string))
+		}
+	}()
+	v, err = dec.decodeValue()
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +187,7 @@ func (dec *Decoder) decodeValue() (interface{}, error) {
 		*object = TypedObjectType{ClassName: StringType(classNameBytes), Object: _Object(obj)}
 		return object, nil
 	}
-	panic("not reach")
+	panic(fmt.Sprintf("not reach: %#v", marker))
 	return nil, nil
 }
 

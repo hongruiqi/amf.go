@@ -12,7 +12,7 @@ type Encoder struct {
 	bw         *bufio.Writer
 	refStrings []StringType  // Strings
 	refObjects []interface{} // Object, Array, XML, XMLDocument, ByteArray, Date and instances of user defined Classes
-	refTraits  []*Trait      // Objects and instances of user defined Classes have trait information	
+	refTraits  []*Trait      // Objects and instances of user defined Classes have trait information
 }
 
 func NewEncoder(w io.Writer) *Encoder {

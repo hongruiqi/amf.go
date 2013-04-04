@@ -4,8 +4,10 @@ import (
 	"bufio"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"math"
+	"reflect"
 )
 
 type Encoder struct {
@@ -200,7 +202,7 @@ func (enc *Encoder) encodeValue(v interface{}) error {
 			}
 		}
 	} else {
-		return errors.New("unsupported type")
+		return fmt.Errorf("amf0 encoder unsupported type: %v", reflect.TypeOf(v))
 	}
 	return nil
 }
